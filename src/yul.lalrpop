@@ -1,0 +1,196 @@
+use std::str::FromStr;
+use crate::ast;
+
+grammar;
+
+Comma<T>: Vec<T> = {
+    => Vec::new(),
+    CommaOne<T> => <>,
+};
+
+CommaOne<T>: Vec<T> = {
+    <e:T> <v:("," <T>)*> => {
+        let mut v = v;
+        v.insert(0, e);
+        v
+    }
+};
+
+pub Block: ast::Block = {
+    "{" <statements: Statement*> "}" => ast::Block {
+        statements: statements
+    }
+}
+
+
+pub Statement: ast::Statement = {
+    <Block> => ast::Statement::Block(<>),
+    <FunctionDefinition> => <>,
+    <VariableDeclaration> => <>,
+    <Assignment> => <>,
+    <FunctionCall> => ast::Statement::FunctionCall(Box::new(<>)),
+    <If> => <>,
+    <For> => <>,
+    <Switch> => <>,
+    "leave" => {
+        ast::Statement::Leave
+    },
+    "break" => {
+        ast::Statement::Break
+    },
+    "continue" => {
+        ast::Statement::Continue
+    },
+}
+
+pub FunctionDefinition: ast::Statement = {
+    "function" <name: Identifier> "(" <params: TypedIdentifierList?> ")" <returns:("->" <TypedIdentifierList>)?> <body: Block> => 
+    ast::Statement::FunctionDefinition(Box::new(ast::FunctionDefinition {
+        name: name,
+        params: params.unwrap_or_default(),
+        returns: returns.unwrap_or_default(),
+        body: body,
+    })),
+}
+
+pub VariableDeclaration: ast::Statement = {
+    "let" <names:TypedIdentifierList> <expr:(":=" <Expression>)?> => {
+        ast::Statement::VariableDeclaration(names, expr)
+    }
+}
+
+pub Assignment: ast::Statement = {
+    <ids:CommaOne<Identifier>> ":=" <expr:Expression> => {
+        ast::Statement::Assign(ids, expr)
+    }
+}
+
+pub FunctionCall: ast::FunctionCall = {
+    <id:Identifier> "(" <arguments:Comma<Expression>> ")" => {
+        ast::FunctionCall{id, arguments}
+    }
+}
+
+pub For: ast::Statement = {
+    "for" <init:Block> <cond:Expression> <post_iter:Block> <body:Block> => {
+        ast::Statement::For(ast::For{
+            init_block: init,
+            condition: cond,
+            post_block: post_iter,
+            execution_block: body
+        })
+    },
+}
+
+pub If: ast::Statement = {
+    "if" <cond: Expression> <body: Block> => {
+        ast::Statement::If(cond, body)
+    },
+}
+
+
+pub Switch: ast::Statement = {
+    "switch" <condition:Expression> <opt:SwitchOptions> =>
+        ast::Statement::Switch(ast::Switch{
+            condition,
+            opt,
+        }),
+        
+}
+
+pub SwitchOptions: ast::SwitchOptions = {
+    <case:SwitchCase+> <default:SwitchDefault?> => {
+        ast::SwitchOptions::Cases(case, default)
+    },
+    <default:SwitchDefault> => {
+        ast::SwitchOptions::Default(<>)
+    }
+}
+
+pub SwitchCase: ast::SwitchCase = {
+    "case" <case:Literal> <body:Block> => ast::SwitchCase{
+        case,
+        body
+    }
+}
+
+pub SwitchDefault: ast:: SwitchDefault = {
+    "default" <body:Block> => {
+        ast::SwitchDefault{
+            body
+        }
+    }
+}
+
+
+pub Expression: ast::Expression = {
+    <Literal> => ast::Expression::Literal(<>),
+    <Identifier> => ast::Expression::Identifier(<>),
+    <FunctionCall> => ast::Expression::FunctionCall(Box::new(<>)),
+}
+
+pub Literal: ast::Literal = {
+    "true" <t_type:(":" <Identifier>)?> => ast::Literal::TrueLiteral(t_type),
+    "false" <t_type:(":" <Identifier>)?> => ast::Literal::FalseLiteral(t_type),
+    <dec: DecimalNumber> <t_type:(":" <Identifier>)?> => ast::Literal::DecimalNumberLiteral(dec, t_type),
+    <hex: HexNumber> <t_type:(":" <Identifier>)?> => ast::Literal::HexNumberLiteral(hex, t_type),
+    <str:StringLiteral> <t_type:(":" <Identifier>)?> => {
+        ast::Literal::StringLiteral(str, t_type)
+    },
+}
+
+pub DecimalNumber: ast::DecimalNumber = {
+    <dec: DecimalNumberInner> => ast::DecimalNumber{
+        dec: dec
+    }
+}
+
+pub HexNumber: ast::HexNumber = {
+    <hex: HexNumberInner> => ast::HexNumber{
+        hex: hex
+    }
+}
+
+
+pub StringLiteral: ast::StringLiteral = {
+    <str: StringInner>=> ast::StringLiteral{
+        str: str
+    }
+}
+
+pub TypedIdentifierList: Vec<ast::TypedIdentifier> = {
+    CommaOne<<TypedIdentifier>> => <>
+}
+
+pub TypedIdentifier: ast::TypedIdentifier = {
+    <id: Identifier> ":" <type_name: TypeName> => 
+        ast::TypedIdentifier {
+            identifier: id,
+            type_name: Some(type_name),
+        },
+    <identifier: Identifier> => 
+        ast::TypedIdentifier {
+            identifier: identifier,
+            type_name: None,
+        }
+}
+
+pub TypeName: ast::TypeName = {
+    <type_name: Identifier> => ast::TypeName{
+        type_name: type_name,
+    }
+}
+
+pub Identifier: ast::Identifier = {
+    <name: Name> => ast::Identifier{
+        name: name,
+    }
+}
+
+pub Name: String = <s:r"[a-zA-Z][a-zA-Z_0-9.]*"> => String::from(s);
+
+pub DecimalNumberInner: String = <s:r"[0-9]+"> => String::from(s);
+
+pub HexNumberInner: String = <s:r"0x[0-9a-fA-F]+"> => String::from(s);
+
+pub StringInner: String = <s:r#""[^"\r\n]*\""#> => String::from(s);
